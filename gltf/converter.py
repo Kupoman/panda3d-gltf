@@ -24,11 +24,6 @@ else:
     CPTA_stdfloat = CPTA_double
     PTA_stdfloat = PTA_double
 
-load_prc_file_data(
-    __file__,
-    'interpolate-frames #t\n'
-)
-
 GltfSettings = collections.namedtuple('GltfSettings', (
     'physics_engine',
     'print_scene',
