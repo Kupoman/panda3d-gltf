@@ -1,6 +1,7 @@
 import base64
 import collections
 import itertools
+import io
 import json
 import os
 import math
@@ -1850,6 +1851,33 @@ def read_glb_chunk(glb_file):
     return chunk_type, chunk_data
 
 
+def load_gltf(converter, stream):
+    gltf_data = {}
+    if stream.read(4) == b'glTF':
+        version, = struct.unpack('<I', stream.read(4))
+        if version != 2:
+            raise RuntimeError('Only GLB version 2 is supported, file is version {0}'.format(version))
+
+        length, = struct.unpack('<I', stream.read(4))
+
+        chunk_type, chunk_data = read_glb_chunk(stream)
+        assert chunk_type == b'JSON'
+        gltf_data = json.loads(chunk_data.decode('utf-8'))
+
+        if stream.tell() < length:
+            #if read_bytes % 4 != 0:
+            #    stream.read((4 - read_bytes) % 4)
+            chunk_type, chunk_data = read_glb_chunk(stream)
+            assert chunk_type == b'BIN\000'
+            converter.buffers[0] = chunk_data
+    else:
+        # let's see if this is a .gltf file instead
+        stream.seek(0)
+        gltf_data = json.load(io.TextIOWrapper(stream, encoding='utf-8'))
+
+    return gltf_data
+
+
 def convert(src, dst, settings=None):
     if settings is None:
         settings = GltfSettings()
@@ -1868,33 +1896,11 @@ def convert(src, dst, settings=None):
 
     converter = Converter(indir=indir, outdir=outdir, settings=settings)
 
+    gltf_data = {}
     with open(src, 'rb') as glb_file:
-        if glb_file.read(4) == b'glTF':
-            version, = struct.unpack('<I', glb_file.read(4))
-            if version != 2:
-                raise RuntimeError("Only GLB version 2 is supported, file is version {0}".format(version))
+        gltf_data = load_gltf(converter, glb_file)
 
-            length, = struct.unpack('<I', glb_file.read(4))
-
-            chunk_type, chunk_data = read_glb_chunk(glb_file)
-            assert chunk_type == b'JSON'
-            gltf_data = json.loads(chunk_data.decode('utf-8'))
-
-            if glb_file.tell() < length:
-                #if read_bytes % 4 != 0:
-                #    glb_file.read((4 - read_bytes) % 4)
-                chunk_type, chunk_data = read_glb_chunk(glb_file)
-                assert chunk_type == b'BIN\000'
-                converter.buffers[0] = chunk_data
-
-            converter.update(gltf_data, writing_bam=True)
-        else:
-            # Re-open as a text file.
-            glb_file.close()
-
-            with open(src) as gltf_file:
-                gltf_data = json.load(gltf_file)
-                converter.update(gltf_data, writing_bam=True)
+    converter.update(gltf_data, writing_bam=True)
 
     if settings.print_scene:
         converter.active_scene.ls()
